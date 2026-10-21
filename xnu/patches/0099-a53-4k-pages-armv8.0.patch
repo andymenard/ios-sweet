@@ -178,6 +178,23 @@ index 023086f..2b17376 100644
  #endif
  
  	/* Ensure TTEs are visible */
+diff --git a/osfmk/kern/zalloc.c b/osfmk/kern/zalloc.c
+index 182b44a..719b233 100644
+--- a/osfmk/kern/zalloc.c
++++ b/osfmk/kern/zalloc.c
+@@ -160,7 +160,11 @@ ZONE_DEFINE_TYPE(percpu_u64_zone, "percpu.64", uint64_t,
+ #define ZONE_GUARD_SPARSE       (64  * 1024)
+ #endif /* ZSECURITY_CONFIG(SAD_FENG_SHUI) */
+ 
+-#if XNU_PLATFORM_MacOSX
++/*
++ * a53-4k: macOS sizes need the ARM_LARGE_MEMORY (-2TB) kernel VA; a MacOSX
++ * build with the iOS layout (4K pages) has ~112GB of kernel VA in total.
++ */
++#if XNU_PLATFORM_MacOSX && !(defined(__arm64__) && !defined(ARM_LARGE_MEMORY))
+ #define ZONE_MAP_MAX            (32ULL << 30)
+ #define ZONE_MAP_VA_SIZE        (128ULL << 30)
+ #else /* XNU_PLATFORM_MacOSX */
 diff --git a/osfmk/mach/arm/vm_param.h b/osfmk/mach/arm/vm_param.h
 index c013288..0887182 100644
 --- a/osfmk/mach/arm/vm_param.h
