@@ -105,7 +105,7 @@ copy "$work/appos/root" "$work/root/private/preboot/Cryptexes/App"
 dsc=private/preboot/Cryptexes/OS/System/Library/Caches/com.apple.dyld
 sudo mkdir -p "$work/root/System/Library/Caches/com.apple.dyld"
 for f in "$work/root/$dsc"/*; do
-	sudo ln "$f" "$work/root/System/Library/Caches/com.apple.dyld/${f##*/}"
+	sudo ln -f "$f" "$work/root/System/Library/Caches/com.apple.dyld/${f##*/}"	# -f: REUSE reruns
 done
 
 # dyld does not search the cryptexes at ignition level 1: hard-link every
