@@ -20,7 +20,13 @@ set -euo pipefail
 
 [[ $# -ge 4 ]] || { sed -n '2,12p' "$0"; exit 2; }
 os=$(realpath "$1") sysos=$(realpath "$2") appos=$(realpath "$3") out=$4 size=${5:-16G}
-[[ ! -e $out ]] || { echo "refusing to overwrite $out" >&2; exit 1; }
+# REUSE=1: continue into an existing image (rsync skips what is already there).
+if [[ ${REUSE:-0} != 1 ]]; then
+	[[ ! -e $out ]] || { echo "refusing to overwrite $out (REUSE=1 continues into it)" >&2; exit 1; }
+fi
+# Files apfs-fuse cannot read are listed here instead of aborting the copy.
+errlog="$(realpath -m "$out").rsync-errors.log"
+: > "$errlog"
 
 # Pre-flight tool check
 missing_tools=()
@@ -71,8 +77,10 @@ apfs_mount "$os" os
 apfs_mount "$sysos" sysos
 apfs_mount "$appos" appos
 
-truncate -s "$size" "$out"
-mkfs.hfsplus -s -J -v iOSRoot "$out"
+if [[ ! -e $out ]]; then
+	truncate -s "$size" "$out"
+	mkfs.hfsplus -s -J -v iOSRoot "$out"
+fi
 mkdir "$work/root"
 sudo mount -t hfsplus -o loop,force "$out" "$work/root"
 mounts=("$work/root" "${mounts[@]}")
@@ -80,7 +88,14 @@ mounts=("$work/root" "${mounts[@]}")
 copy() {
 	echo "copying $1 -> ${2#"$work/root"}"
 	sudo mkdir -p "$2"
-	sudo rsync -aH --numeric-ids "$1/" "$2/"
+	# 23 = partial transfer: some source files were unreadable (logged to $errlog).
+	local rc=0
+	sudo rsync -aH --numeric-ids "$1/" "$2/" 2>>"$errlog" || rc=$?
+	if [[ $rc == 23 ]]; then
+		echo "partial transfer from $1: $(grep -c 'failed' "$errlog") unreadable so far, see $errlog" >&2
+	elif [[ $rc != 0 ]]; then
+		exit $rc
+	fi
 }
 copy "$work/os/root" "$work/root"
 copy "$work/sysos/root" "$work/root/private/preboot/Cryptexes/OS"
