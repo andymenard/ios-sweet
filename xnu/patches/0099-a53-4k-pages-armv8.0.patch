@@ -28,6 +28,64 @@ index 9a748ea..96ee5f2 100644
  
  CFLAGS_ARM64	= -Darm64 -DARM64 -D__ARM64__ -DLP64 -DPAGE_SIZE_FIXED -DVM_KERNEL_LINK_ADDRESS=$(ARM64_LINK_ADDR) \
  			$(LARGE_MEMORY_DEFINE) -momit-leaf-frame-pointer -fno-strict-aliasing -D__API__=v4 -mkernel
+diff --git a/osfmk/arm/commpage/commpage_asm.s b/osfmk/arm/commpage/commpage_asm.s
+index da0bbba..b6b7c28 100644
+--- a/osfmk/arm/commpage/commpage_asm.s
++++ b/osfmk/arm/commpage/commpage_asm.s
+@@ -243,6 +243,28 @@ _jump_table:				// 32 entry jump table, only 2 are used
+ 	brk #666
+ 
+ 
++/*
++ * PFZ_TRYLOCK lock: w10 = old lock word (0 = acquired), lock 0 -> 1 with acquire.
++ * a53-4k: ARMv8.0 CPUs (Cortex-A53) have no LSE casa; use an exclusive pair.
++ * Uses only w10-w13 (caller save, as the PFZ routines require).
++ */
++.macro PFZ_TRYLOCK lock
++#if __ARM_FEATURE_ATOMICS
++	mov		w10, wzr		 // unlock value = w10 = 0
++	mov		w11, #1			 // locked value = w11 = 1
++	casa	w10, w11, [\lock]	 // Atomic CAS with acquire barrier
++#else
++	mov		w11, #1			 // locked value = w11 = 1
++1:	ldaxr	w10, [\lock]		 // old value, acquire
++	cbnz	w10, 2f			 // held: fail with w10 != 0
++	stxr	w13, w11, [\lock]
++	cbnz	w13, 1b
++	b		3f
++2:	clrex
++3:
++#endif
++.endmacro
++
+ /*
+  * typedef volatile struct {
+  *		void *opaque1; <-- ptr to first queue element or null
+@@ -269,11 +291,8 @@ _pfz_trylock_and_enqueue:
+ 	ARM64_STACK_PROLOG
+ 	PUSH_FRAME
+ 
+-	mov		w10, wzr		 // unlock value = w10 = 0
+-	mov		w11, #1			 // locked value = w11 = 1
+-
+ 	// Try to grab the lock
+-	casa	w10, w11, [x3]	 // Atomic CAS with acquire barrier
++	PFZ_TRYLOCK x3
+ 	cbz		w10, Ltrylock_enqueue_success
+ 
+ 	mov		x0, #-1			// Failed
+@@ -320,10 +339,7 @@ _pfz_trylock_and_dequeue:
+ 	PUSH_FRAME
+ 
+ 	// Try to grab the lock
+-	mov		w10, wzr		 // unlock value = w10 = 0
+-	mov		w11, #1			 // locked value = w11 = 1
+-
+-	casa	w10, w11, [x2]	 // Atomic CAS with acquire barrier
++	PFZ_TRYLOCK x2
+ 	cbz		w10, Ltrylock_dequeue_success
+ 
+ 	mov		x0, #-1			// Failed
 diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
 index 023086f..2b17376 100644
 --- a/osfmk/arm64/start.s
