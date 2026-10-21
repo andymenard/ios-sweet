@@ -224,6 +224,8 @@ def main():
     ap.add_argument('--gdb', action='store_true', help='start halted, gdb stub on :1234, no timeout')
     ap.add_argument('--hmp', action='append', default=[], help='extra monitor command run after stop (repeatable), e.g. "x /8gx 0xfffffe..."')
     ap.add_argument('--cpu', default='cortex-a76', help='QEMU CPU model (default: cortex-a76)')
+    ap.add_argument('--disk', help='raw image attached as a virtio-mmio block device (kernel: rd=vblk0)')
+    ap.add_argument('--no-int-log', action='store_true', help='do not log every exception to qemu.log (long runs)')
     ap.add_argument('--kernel', help='matching unstripped kernel, for exact framebuffer text decoding (uses llvm-nm)')
     ap.add_argument('--fail-on-panic', action='store_true', help='exit 2 for a visible panic, 3 for incomplete/blank decoding; requires --kernel')
     ap.add_argument('--live-serial', action='store_true', help='stream serial console output to stdout in real time')
@@ -275,10 +277,15 @@ def main():
     ram_gib = max(4, -(-(phys_base + mem_size - 0x40000000) // (1 << 30)))
     cmd = ['qemu-system-aarch64', '-M', 'virt,gic-version=3', '-cpu', a.cpu, '-smp', '1', '-m', f'{ram_gib}G',
            '-nographic', '-serial', f'file:{out}/serial.txt', '-qmp', f'unix:{mon},server,nowait',
-           '-d', 'int,guest_errors,unimp', '-D', f'{out}/qemu.log', '-no-reboot',
+           '-d', 'guest_errors,unimp' if a.no_int_log else 'int,guest_errors,unimp', '-D', f'{out}/qemu.log', '-no-reboot',
            '-device', f'loader,file={out}/ram.bin,addr={phys_base:#x},force-raw=on',
            '-device', f'loader,file={out}/stub.bin,addr={STUB_PA:#x},force-raw=on',
            '-device', f'loader,addr={STUB_PA:#x},cpu-num=0']
+    if a.disk:
+        # bsd/dev/sweet_vblk.c speaks the modern (version 2) virtio-mmio transport only
+        cmd += ['-global', 'virtio-mmio.force-legacy=false',
+                '-drive', f'if=none,id=vblk0,format=raw,file={os.path.abspath(a.disk)}',
+                '-device', 'virtio-blk-device,drive=vblk0']
     if a.gdb:
         cmd += ['-S', '-gdb', 'tcp::1234']
 
