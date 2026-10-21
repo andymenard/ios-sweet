@@ -20,7 +20,7 @@ snapshot of the circular screen, not a complete boot log. --fail-on-panic
 returns 2 when a panic is visible; absence of a panic does not prove boot.
 An undecodable or blank screen returns 3 with --fail-on-panic.
 """
-import argparse, json, os, shutil, socket, struct, subprocess, sys, time, zlib
+import argparse, json, os, re, shutil, socket, struct, subprocess, sys, time, zlib
 
 FB_BASE, FB_W, FB_H = 0x9c000000, 1080, 2400
 FB_STRIDE = FB_W * 4
@@ -226,6 +226,7 @@ def main():
     ap.add_argument('--cpu', default='cortex-a76', help='QEMU CPU model (default: cortex-a76)')
     ap.add_argument('--disk', help='raw image attached as a virtio-mmio block device (kernel: rd=vblk0)')
     ap.add_argument('--no-int-log', action='store_true', help='do not log every exception to qemu.log (long runs)')
+    ap.add_argument('--stack-words', type=int, default=0, help='also dump N 64-bit words from SP to stack.txt (for a backtrace)')
     ap.add_argument('--kernel', help='matching unstripped kernel, for exact framebuffer text decoding (uses llvm-nm)')
     ap.add_argument('--fail-on-panic', action='store_true', help='exit 2 for a visible panic, 3 for incomplete/blank decoding; requires --kernel')
     ap.add_argument('--live-serial', action='store_true', help='stream serial console output to stdout in real time')
@@ -313,6 +314,11 @@ def main():
         if p.poll() is None:
             _, regs, *extra = qmp(mon, 'stop', 'info registers', *a.hmp, pmemsave=(FB_BASE, FB_STRIDE * FB_H, f'{out}/fb.raw'))
             open(f'{out}/regs.txt', 'w').write(regs + ''.join(f'\n(qemu) {c}\n{r}' for c, r in zip(a.hmp, extra)))
+            if a.stack_words:
+                # HMP has no $sp on aarch64 and the kernel stack moves between boots: read SP first.
+                sp = re.search(r'\bSP=([0-9a-f]{16})', regs)
+                if sp:
+                    open(f'{out}/stack.txt', 'w').write(qmp(mon, f'x /{a.stack_words}gx 0x{sp.group(1)}')[0])
             p.kill()
             p.wait()
             raw = open(f'{out}/fb.raw', 'rb').read()

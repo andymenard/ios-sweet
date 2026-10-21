@@ -626,6 +626,23 @@ index da0bbba..b6b7c28 100644
  	cbz		w10, Ltrylock_dequeue_success
  
  	mov		x0, #-1			// Failed
+diff --git a/osfmk/arm/pmap/pmap.c b/osfmk/arm/pmap/pmap.c
+index 00568d3..bacc090 100644
+--- a/osfmk/arm/pmap/pmap.c
++++ b/osfmk/arm/pmap/pmap.c
+@@ -10897,6 +10897,12 @@ pmap_create_commpages(vm_map_address_t *kernel_data_addr, vm_map_address_t *kern
+ 		// comm page, but with new leaf index we've just generated.
+ 		commpage_text_va = (_COMM_PAGE64_BASE_ADDRESS & ~pt_attr_leaf_index_mask(pt_attr));
+ 		commpage_text_va |= (text_leaf_index << pt_attr_leaf_shift(pt_attr));
++		/*
++		 * a53-4k: with 16K VM pages on a 4K-granule MMU (PAGE_RATIO 4) a leaf
++		 * index is only 4K-aligned, and pmap_enter needs a VM page boundary
++		 * (write_pte_fast panics otherwise): round down, collisions retry.
++		 */
++		commpage_text_va = trunc_page(commpage_text_va);
+ 	} while ((commpage_text_va == _COMM_PAGE64_BASE_ADDRESS) || (commpage_text_va == _COMM_PAGE64_RO_ADDRESS)); // Try again if we collide (should be unlikely)
+ 
+ 	// Assert that this is empty
 diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
 index 06bb568..c0f10dc 100644
 --- a/osfmk/arm64/arm_vm_init.c
