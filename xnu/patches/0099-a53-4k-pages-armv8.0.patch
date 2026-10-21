@@ -12,6 +12,26 @@ index 9a748ea..1504a83 100644
  
  
  #
+diff --git a/osfmk/mach/arm/vm_param.h b/osfmk/mach/arm/vm_param.h
+index c013288..0887182 100644
+--- a/osfmk/mach/arm/vm_param.h
++++ b/osfmk/mach/arm/vm_param.h
+@@ -133,7 +133,14 @@ extern int PAGE_SHIFT_CONST;
+ 
+ /* system-wide values */
+ #define MACH_VM_MIN_ADDRESS_RAW 0x0ULL
+-#if defined(XNU_PLATFORM_MacOSX) || defined(XNU_PLATFORM_DriverKit)
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++/*
++ * a53-4k: the kernel is built for the MacOSX platform, but with 4K pages the
++ * commpage (0xFFFFFC000) must be nested in an L1 block above the user VA max,
++ * which is the iOS layout: use iOS's limit, as iOS userland expects anyway.
++ */
++#define MACH_VM_MAX_ADDRESS_RAW 0x0000000FC0000000ULL
++#elif defined(XNU_PLATFORM_MacOSX) || defined(XNU_PLATFORM_DriverKit)
+ #define MACH_VM_MAX_ADDRESS_RAW 0x00007FFFFE000000ULL
+ #else
+ #define MACH_VM_MAX_ADDRESS_RAW 0x0000000FC0000000ULL
 diff --git a/pexpert/pexpert/arm64/SWEET.h b/pexpert/pexpert/arm64/SWEET.h
 index b99c2f4..26017b1 100644
 --- a/pexpert/pexpert/arm64/SWEET.h
