@@ -51,6 +51,20 @@ jobs:
           # libfirehose_kernel is built arm64e-only; the SWEET kernel is plain arm64
           sed -i '' 's/ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"/ARCHS="x86_64 arm64e arm64" VALID_ARCHS="x86_64 arm64e arm64"/' dxb/build.sh
           grep -c 'VALID_ARCHS="x86_64 arm64e arm64"' dxb/build.sh
+          # a53-4k: libfirehose_kernel is built by Xcode, outside MACHINE_FLAGS; its arm64
+          # slice must not use LSE atomics either (ldadd/cas in firehose_buffer_* otherwise)
+          python3 - <<'PY'
+          p = 'dxb/build.sh'; s = open(p).read()
+          anchor = '"${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"\n'
+          i = s.rfind(anchor)
+          assert i >= 0, 'libfirehose xcconfig anchor not found'
+          i += len(anchor)
+          line = ('        echo "OTHER_CFLAGS[arch=arm64] = -mkernel -nostdinc -Wno-packed '
+                  '-mcpu=cortex-a53+crypto -mfix-cortex-a53-835769" '
+                  '>> "${SRCROOT}/xcodeconfig/libfirehose_kernel.xcconfig"\n')
+          open(p, 'w').write(s[:i] + line + s[i:])
+          PY
+          grep -n 'arch=arm64' dxb/build.sh
           ls dxb/patches
 
       - name: Deps
